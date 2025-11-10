@@ -679,6 +679,13 @@
         .teacher-message-area {
             margin: 15px 0;
         }
+        
+        /* Loading indicator */
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -726,7 +733,7 @@
                     
                     <h3>📋 Mis Exámenes</h3>
                     <div class="exams-list" id="examsList">
-                        <p style="text-align: center; color: #666; padding: 10px;">No tienes exámenes creados</p>
+                        <div class="loading">Cargando datos...</div>
                     </div>
                 </div>
             </div>
@@ -779,1135 +786,1229 @@
         </div>
 
         <script>
-            // Variables globales - SIN localStorage
-            let teachers = {
-                'profesor@ejemplo.com': {
-                    email: 'profesor@ejemplo.com',
-                    password: '123456',
-                    exams: {}
+        // CONFIGURACIÓN DE GITHUB GIST - USANDO TUS CREDENCIALES
+        const GIST_ID = '293291f181d26aa76b2b9578e22e6257';
+        const GITHUB_TOKEN = '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';
+        
+        // URLs para el Gist
+        const GIST_READ_URL = `https://gist.githubusercontent.com/Katsuxdxd/${GIST_ID}/raw`;
+        const GIST_API_URL = `https://api.github.com/gists/${GIST_ID}`;
+        
+        // Variables globales
+        let teachers = {};
+        let currentTeacher = null;
+        let currentExam = null;
+        let questionsBank = {};
+        let testCode = '';
+        let studentAnswers = [];
+        let currentQuestionIndex = 0;
+        let studentName = '';
+        let questionTimer = null;
+        let testSettings = {};
+        let expandedExam = null;
+        let rememberTeacherChecked = false;
+        let isSaving = false; // Prevenir múltiples guardados simultáneos
+        
+        // Elementos del DOM
+        const teacherEmail = document.getElementById('teacherEmail');
+        const teacherPassword = document.getElementById('teacherPassword');
+        const rememberTeacher = document.getElementById('rememberTeacher');
+        const loginTeacherBtn = document.getElementById('loginTeacher');
+        const registerTeacherBtn = document.getElementById('registerTeacher');
+        const teacherLogin = document.getElementById('teacherLogin');
+        const teacherDashboard = document.getElementById('teacherDashboard');
+        const teacherInfo = document.getElementById('teacherInfo');
+        const logoutTeacherBtn = document.getElementById('logoutTeacher');
+        const teacherMessageArea = document.getElementById('teacherMessageArea');
+        const examName = document.getElementById('examName');
+        const createExamBtn = document.getElementById('createExam');
+        const examsList = document.getElementById('examsList');
+        const studentNameInput = document.getElementById('studentName');
+        const accessCodeInput = document.getElementById('accessCode');
+        const accessTestBtn = document.getElementById('accessTest');
+        const messageArea = document.getElementById('messageArea');
+        const testInterface = document.getElementById('testInterface');
+        const currentQuestionText = document.getElementById('currentQuestionText');
+        const questionNumber = document.getElementById('questionNumber');
+        const progressIndicator = document.getElementById('progressIndicator');
+        const typeHint = document.getElementById('typeHint');
+        const studentOptionsContainer = document.getElementById('studentOptionsContainer');
+        const submitButton = document.getElementById('submitButton');
+        const answersSection = document.getElementById('answersSection');
+        const answersList = document.getElementById('answersList');
+        const testResult = document.getElementById('testResult');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const studentRankingsSection = document.getElementById('studentRankingsSection');
+        const studentRankingsList = document.getElementById('studentRankingsList');
+        
+        // Funciones para manejar el almacenamiento en Gist
+        async function loadTeachersFromGist() {
+            try {
+                const response = await fetch(GIST_READ_URL + '?_=' + Date.now());
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.teachers || {};
+                } else {
+                    console.error('Error al cargar el Gist:', response.status);
+                    return {};
                 }
-            };
-            let currentTeacher = null;
-            let currentExam = null;
-            let questionsBank = {};
-            let testCode = '';
-            let studentAnswers = [];
-            let currentQuestionIndex = 0;
-            let studentName = '';
-            let questionTimer = null;
-            let testSettings = {};
-            let expandedExam = null;
-            let rememberTeacherChecked = false;
+            } catch (e) {
+                console.error('Error al cargar datos desde Gist:', e);
+                return {};
+            }
+        }
+        
+        async function saveTeachersToGist(teachersData) {
+            if (isSaving) return; // Evitar guardados múltiples
+            isSaving = true;
             
-            // Elementos del DOM
-            const teacherEmail = document.getElementById('teacherEmail');
-            const teacherPassword = document.getElementById('teacherPassword');
-            const rememberTeacher = document.getElementById('rememberTeacher');
-            const loginTeacherBtn = document.getElementById('loginTeacher');
-            const registerTeacherBtn = document.getElementById('registerTeacher');
-            const teacherLogin = document.getElementById('teacherLogin');
-            const teacherDashboard = document.getElementById('teacherDashboard');
-            const teacherInfo = document.getElementById('teacherInfo');
-            const logoutTeacherBtn = document.getElementById('logoutTeacher');
-            const teacherMessageArea = document.getElementById('teacherMessageArea');
-            const examName = document.getElementById('examName');
-            const createExamBtn = document.getElementById('createExam');
-            const examsList = document.getElementById('examsList');
-            
-            // Elementos del alumno
-            const studentNameInput = document.getElementById('studentName');
-            const accessCodeInput = document.getElementById('accessCode');
-            const accessTestBtn = document.getElementById('accessTest');
-            const messageArea = document.getElementById('messageArea');
-            const testInterface = document.getElementById('testInterface');
-            const currentQuestionText = document.getElementById('currentQuestionText');
-            const questionNumber = document.getElementById('questionNumber');
-            const progressIndicator = document.getElementById('progressIndicator');
-            const typeHint = document.getElementById('typeHint');
-            const studentOptionsContainer = document.getElementById('studentOptionsContainer');
-            const submitButton = document.getElementById('submitButton');
-            const answersSection = document.getElementById('answersSection');
-            const answersList = document.getElementById('answersList');
-            const testResult = document.getElementById('testResult');
-            const timerDisplay = document.getElementById('timerDisplay');
-            const studentRankingsSection = document.getElementById('studentRankingsSection');
-            const studentRankingsList = document.getElementById('studentRankingsList');
-            
-            // Función para añadir opción
-            function addOption(container, placeholder = '', checked = false) {
-                const optionRow = document.createElement('div');
-                optionRow.className = 'option-row';
-                
-                optionRow.innerHTML = `
-                    <input type="text" class="option-input-text" placeholder="${placeholder}" value="${placeholder}">
-                    <input type="checkbox" class="correct-checkbox" ${checked ? 'checked' : ''}>
-                    <button type="button" class="delete-option-btn" title="Eliminar opción">✕</button>
-                `;
-                
-                const deleteBtn = optionRow.querySelector('.delete-option-btn');
-                deleteBtn.onclick = () => {
-                    if (container.querySelectorAll('.option-row').length > 2) {
-                        container.removeChild(optionRow);
-                    } else {
-                        showMessage('Debe haber al menos 2 opciones', 'error');
+            try {
+                const data = {
+                    description: "Datos de exámenes educativos - Sistema de Pruebas",
+                    public: true,
+                    files: {
+                        "exam-data.json": {
+                            content: JSON.stringify({ teachers: teachersData }, null, 2)
+                        }
                     }
                 };
                 
-                container.appendChild(optionRow);
-            }
-            
-            // Inicializar con 4 opciones por defecto
-            function initializeOptions(container) {
-                container.innerHTML = '';
-                addOption(container, 'Opción 1', false);
-                addOption(container, 'Opción 2', false);
-                addOption(container, 'Opción 3', false);
-                addOption(container, 'Opción 4', false);
-            }
-            
-            // Mostrar mensaje (específico para cada panel)
-            function showMessage(message, type, isTeacher = false) {
-                const targetArea = isTeacher ? teacherMessageArea : messageArea;
-                targetArea.innerHTML = `
-                    <div class="${type === 'success' ? 'success-message' : 'error-message'}">
-                        ${message}
-                    </div>
-                `;
+                const response = await fetch(GIST_API_URL, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'ExamSystem/1.0'
+                    },
+                    body: JSON.stringify(data)
+                });
                 
-                setTimeout(() => {
-                    targetArea.innerHTML = '';
-                }, 5000);
-            }
-            
-            // Registro de docente - CORREGIDO
-            registerTeacherBtn.addEventListener('click', () => {
-                const email = teacherEmail.value.trim();
-                const password = teacherPassword.value.trim();
-                
-                if (!email || !password) {
-                    showMessage('Por favor completa todos los campos', 'error');
-                    return;
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                if (!email.includes('@')) {
-                    showMessage('Por favor ingresa un correo válido', 'error');
-                    return;
+            } catch (e) {
+                console.error('Error al guardar en Gist:', e);
+                showMessage('Error al guardar los datos. Verifica tu conexión.', 'error', true);
+            } finally {
+                isSaving = false;
+            }
+        }
+        
+        // Función para añadir opción
+        function addOption(container, placeholder = '', checked = false) {
+            const optionRow = document.createElement('div');
+            optionRow.className = 'option-row';
+            
+            optionRow.innerHTML = `
+                <input type="text" class="option-input-text" placeholder="${placeholder}" value="${placeholder}">
+                <input type="checkbox" class="correct-checkbox" ${checked ? 'checked' : ''}>
+                <button type="button" class="delete-option-btn" title="Eliminar opción">✕</button>
+            `;
+            
+            const deleteBtn = optionRow.querySelector('.delete-option-btn');
+            deleteBtn.onclick = () => {
+                if (container.querySelectorAll('.option-row').length > 2) {
+                    container.removeChild(optionRow);
+                } else {
+                    showMessage('Debe haber al menos 2 opciones', 'error');
                 }
-                
-                if (teachers[email]) {
-                    showMessage('Este correo ya está registrado', 'error');
-                    return;
-                }
-                
-                teachers[email] = {
-                    email: email,
-                    password: password,
-                    exams: {}
-                };
-                
+            };
+            
+            container.appendChild(optionRow);
+        }
+        
+        // Inicializar con 4 opciones por defecto
+        function initializeOptions(container) {
+            container.innerHTML = '';
+            addOption(container, 'Opción 1', false);
+            addOption(container, 'Opción 2', false);
+            addOption(container, 'Opción 3', false);
+            addOption(container, 'Opción 4', false);
+        }
+        
+        // Mostrar mensaje
+        function showMessage(message, type, isTeacher = false) {
+            const targetArea = isTeacher ? teacherMessageArea : messageArea;
+            targetArea.innerHTML = `
+                <div class="${type === 'success' ? 'success-message' : 'error-message'}">
+                    ${message}
+                </div>
+            `;
+            
+            setTimeout(() => {
+                targetArea.innerHTML = '';
+            }, 5000);
+        }
+        
+        // Registro de docente
+        registerTeacherBtn.addEventListener('click', async () => {
+            const email = teacherEmail.value.trim();
+            const password = teacherPassword.value.trim();
+            
+            if (!email || !password) {
+                showMessage('Por favor completa todos los campos', 'error');
+                return;
+            }
+            
+            if (!email.includes('@')) {
+                showMessage('Por favor ingresa un correo válido', 'error');
+                return;
+            }
+            
+            if (teachers[email]) {
+                showMessage('Este correo ya está registrado', 'error');
+                return;
+            }
+            
+            teachers[email] = {
+                email: email,
+                password: password,
+                exams: {}
+            };
+            
+            currentTeacher = email;
+            rememberTeacherChecked = rememberTeacher.checked;
+            await saveTeachersToGist(teachers);
+            loadTeacherDashboard();
+            showMessage('Registro exitoso! Bienvenido.', 'success');
+        });
+        
+        // Inicio de sesión de docente
+        loginTeacherBtn.addEventListener('click', async () => {
+            const email = teacherEmail.value.trim();
+            const password = teacherPassword.value.trim();
+            
+            if (!email || !password) {
+                showMessage('Por favor completa todos los campos', 'error');
+                return;
+            }
+            
+            if (teachers[email] && teachers[email].password === password) {
                 currentTeacher = email;
                 rememberTeacherChecked = rememberTeacher.checked;
                 loadTeacherDashboard();
-                showMessage('Registro exitoso! Bienvenido.', 'success');
-            });
-            
-            // Inicio de sesión de docente
-            loginTeacherBtn.addEventListener('click', () => {
-                const email = teacherEmail.value.trim();
-                const password = teacherPassword.value.trim();
-                
-                if (!email || !password) {
-                    showMessage('Por favor completa todos los campos', 'error');
-                    return;
-                }
-                
-                if (teachers[email] && teachers[email].password === password) {
-                    currentTeacher = email;
-                    rememberTeacherChecked = rememberTeacher.checked;
-                    loadTeacherDashboard();
-                    showMessage('Inicio de sesión exitoso', 'success');
-                } else {
-                    showMessage('Credenciales incorrectas', 'error');
-                }
-            });
-            
-            // Cerrar sesión
-            logoutTeacherBtn.addEventListener('click', () => {
-                currentTeacher = null;
-                teacherDashboard.classList.add('hidden');
-                teacherLogin.classList.remove('hidden');
-                teacherEmail.value = '';
-                teacherPassword.value = '';
-                rememberTeacher.checked = false;
-                showMessage('Sesión cerrada exitosamente', 'success', true);
-            });
-            
-            // Cargar dashboard del docente
-            function loadTeacherDashboard() {
-                teacherLogin.classList.add('hidden');
-                teacherDashboard.classList.remove('hidden');
-                teacherInfo.textContent = `Bienvenido, ${currentTeacher}`;
-                updateExamsList();
+                showMessage('Inicio de sesión exitoso', 'success');
+            } else {
+                showMessage('Credenciales incorrectas', 'error');
+            }
+        });
+        
+        // Cerrar sesión
+        logoutTeacherBtn.addEventListener('click', () => {
+            currentTeacher = null;
+            teacherDashboard.classList.add('hidden');
+            teacherLogin.classList.remove('hidden');
+            teacherEmail.value = '';
+            teacherPassword.value = '';
+            rememberTeacher.checked = false;
+            showMessage('Sesión cerrada exitosamente', 'success', true);
+        });
+        
+        // Cargar dashboard del docente
+        function loadTeacherDashboard() {
+            teacherLogin.classList.add('hidden');
+            teacherDashboard.classList.remove('hidden');
+            teacherInfo.textContent = `Bienvenido, ${currentTeacher}`;
+            updateExamsList();
+        }
+        
+        // Actualizar lista de exámenes
+        function updateExamsList() {
+            if (!currentTeacher || !teachers[currentTeacher]) {
+                examsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No tienes exámenes creados</p>';
+                return;
             }
             
-            // Actualizar lista de exámenes
-            function updateExamsList() {
-                if (!currentTeacher || !teachers[currentTeacher]) {
-                    examsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No tienes exámenes creados</p>';
-                    return;
-                }
-                
-                const teacherExams = teachers[currentTeacher].exams;
-                if (Object.keys(teacherExams).length === 0) {
-                    examsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No tienes exámenes creados</p>';
-                    return;
-                }
-                
-                examsList.innerHTML = '';
-                Object.keys(teacherExams).forEach(examId => {
-                    const exam = teacherExams[examId];
-                    const examDiv = document.createElement('div');
-                    examDiv.className = 'exam-item';
-                    examDiv.dataset.id = examId;
-                    
-                    const examHeader = document.createElement('div');
-                    examHeader.className = 'exam-header';
-                    examHeader.innerHTML = `
-                        <div class="exam-title">${exam.name}</div>
-                        <div class="exam-actions">
-                            <button class="btn btn-success action-btn edit-exam" data-id="${examId}">✏️ Editar</button>
-                            <button class="btn btn-warning action-btn delete-exam" data-id="${examId}">🗑️ Eliminar</button>
-                        </div>
-                    `;
-                    examDiv.appendChild(examHeader);
-                    
-                    const examContent = document.createElement('div');
-                    examContent.className = 'exam-content hidden';
-                    examContent.id = `exam-content-${examId}`;
-                    examDiv.appendChild(examContent);
-                    
-                    examsList.appendChild(examDiv);
-                    
-                    examHeader.addEventListener('click', (e) => {
-                        if (!e.target.closest('.action-btn')) {
-                            toggleExamContent(examId);
-                        }
-                    });
-                    
-                    examHeader.querySelector('.edit-exam').onclick = (e) => {
-                        e.stopPropagation();
-                        editExam(examId);
-                    };
-                    
-                    examHeader.querySelector('.delete-exam').onclick = (e) => {
-                        e.stopPropagation();
-                        deleteExam(examId);
-                    };
-                });
+            const teacherExams = teachers[currentTeacher].exams;
+            if (Object.keys(teacherExams).length === 0) {
+                examsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No tienes exámenes creados</p>';
+                return;
             }
             
-            // Alternar contenido del examen
-            function toggleExamContent(examId) {
-                if (expandedExam === examId) {
-                    expandedExam = null;
-                    document.getElementById(`exam-content-${examId}`).classList.add('hidden');
-                } else {
-                    if (expandedExam) {
-                        document.getElementById(`exam-content-${expandedExam}`).classList.add('hidden');
+            examsList.innerHTML = '';
+            Object.keys(teacherExams).forEach(examId => {
+                const exam = teacherExams[examId];
+                const examDiv = document.createElement('div');
+                examDiv.className = 'exam-item';
+                examDiv.dataset.id = examId;
+                
+                const examHeader = document.createElement('div');
+                examHeader.className = 'exam-header';
+                examHeader.innerHTML = `
+                    <div class="exam-title">${exam.name}</div>
+                    <div class="exam-actions">
+                        <button class="btn btn-success action-btn edit-exam" data-id="${examId}">✏️ Editar</button>
+                        <button class="btn btn-warning action-btn delete-exam" data-id="${examId}">🗑️ Eliminar</button>
+                    </div>
+                `;
+                examDiv.appendChild(examHeader);
+                
+                const examContent = document.createElement('div');
+                examContent.className = 'exam-content hidden';
+                examContent.id = `exam-content-${examId}`;
+                examDiv.appendChild(examContent);
+                
+                examsList.appendChild(examDiv);
+                
+                examHeader.addEventListener('click', (e) => {
+                    if (!e.target.closest('.action-btn')) {
+                        toggleExamContent(examId);
                     }
-                    expandedExam = examId;
-                    document.getElementById(`exam-content-${examId}`).classList.remove('hidden');
-                    loadExamContent(examId);
+                });
+                
+                examHeader.querySelector('.edit-exam').onclick = (e) => {
+                    e.stopPropagation();
+                    editExam(examId);
+                };
+                
+                examHeader.querySelector('.delete-exam').onclick = (e) => {
+                    e.stopPropagation();
+                    deleteExam(examId);
+                };
+            });
+        }
+        
+        // Alternar contenido del examen
+        function toggleExamContent(examId) {
+            if (expandedExam === examId) {
+                expandedExam = null;
+                document.getElementById(`exam-content-${examId}`).classList.add('hidden');
+            } else {
+                if (expandedExam) {
+                    document.getElementById(`exam-content-${expandedExam}`).classList.add('hidden');
                 }
+                expandedExam = examId;
+                document.getElementById(`exam-content-${examId}`).classList.remove('hidden');
+                loadExamContent(examId);
+            }
+        }
+        
+        // Cargar contenido del examen
+        function loadExamContent(examId) {
+            const contentDiv = document.getElementById(`exam-content-${examId}`);
+            if (contentDiv.innerHTML !== '') return;
+            
+            const exam = teachers[currentTeacher].exams[examId];
+            
+            contentDiv.innerHTML = `
+                <div class="questions-list" id="questions-list-${examId}">
+                    <p style="text-align: center; color: #666; padding: 10px;">No hay preguntas en este examen</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="question-${examId}">Pregunta:</label>
+                    <textarea id="question-${examId}" placeholder="Escribe tu pregunta"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Opciones y Respuestas Correctas:</label>
+                    <div id="options-container-${examId}" class="options-container"></div>
+                </div>
+                <div class="time-settings">
+                    <div class="form-group">
+                        <label for="question-time-${examId}">Tiempo por pregunta (segundos):</label>
+                        <input type="number" id="question-time-${examId}" min="10" max="300" value="20">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <button id="add-option-${examId}" class="btn btn-success">➕ Añadir Opción</button>
+                    <button id="add-question-${examId}" class="btn">✅ Añadir Pregunta</button>
+                </div>
+                
+                <div class="general-settings">
+                    <div class="form-group">
+                        <label for="start-date-${examId}">Fecha/hora de inicio:</label>
+                        <input type="datetime-local" id="start-date-${examId}">
+                    </div>
+                    <div class="form-group">
+                        <label for="end-date-${examId}">Fecha/hora de cierre:</label>
+                        <input type="datetime-local" id="end-date-${examId}">
+                    </div>
+                </div>
+                
+                <div class="toggle-section">
+                    <label>
+                        <input type="checkbox" id="show-rankings-${examId}"> 
+                        Mostrar clasificación a los alumnos
+                    </label>
+                </div>
+                
+                <div class="code-display" id="test-code-${examId}">CÓDIGO: ESPERE...</div>
+                <button id="generate-test-${examId}" class="btn btn-secondary">🚀 Generar Examen</button>
+                
+                <div class="participants-section">
+                    <h3>👥 Participantes Finalizados</h3>
+                    <div class="participants-list" id="participants-list-${examId}">
+                        <p style="text-align: center; color: #666; padding: 10px;">No hay participantes aún</p>
+                    </div>
+                    <div class="csv-section">
+                        <button id="export-csv-${examId}" class="btn btn-csv">📊 Exportar Resultados a CSV</button>
+                    </div>
+                </div>
+                
+                <div class="rankings-section">
+                    <h3>🥇 Clasificación Final</h3>
+                    <div class="participants-list" id="rankings-list-${examId}">
+                        <p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>
+                    </div>
+                </div>
+            `;
+            
+            // Inicializar opciones
+            const optionsContainer = document.getElementById(`options-container-${examId}`);
+            initializeOptions(optionsContainer);
+            
+            // Configurar fechas
+            const startDateInput = document.getElementById(`start-date-${examId}`);
+            const endDateInput = document.getElementById(`end-date-${examId}`);
+            
+            if (exam.settings && exam.settings.startDate) {
+                startDateInput.value = formatDateTimeLocal(new Date(exam.settings.startDate));
+            } else {
+                const now = new Date();
+                const startDate = new Date(now.getTime() + 60000);
+                startDateInput.value = formatDateTimeLocal(startDate);
             }
             
-            // Cargar contenido del examen
-            function loadExamContent(examId) {
-                const contentDiv = document.getElementById(`exam-content-${examId}`);
-                if (contentDiv.innerHTML !== '') return;
+            if (exam.settings && exam.settings.endDate) {
+                endDateInput.value = formatDateTimeLocal(new Date(exam.settings.endDate));
+            } else {
+                const now = new Date();
+                const endDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+                endDateInput.value = formatDateTimeLocal(endDate);
+            }
+            
+            // Cargar preguntas
+            displayQuestions(examId);
+            
+            // Configurar eventos
+            document.getElementById(`add-option-${examId}`).onclick = () => {
+                const optionNumber = optionsContainer.querySelectorAll('.option-row').length + 1;
+                addOption(optionsContainer, `Opción ${optionNumber}`, false);
+            };
+            
+            document.getElementById(`add-question-${examId}`).onclick = () => addQuestionToExam(examId);
+            document.getElementById(`generate-test-${examId}`).onclick = () => generateTest(examId);
+            document.getElementById(`export-csv-${examId}`).onclick = () => exportCSV(examId);
+            
+            // Cargar configuración
+            if (exam.settings) {
+                document.getElementById(`question-time-${examId}`).value = exam.settings.questionTime || 20;
+                document.getElementById(`show-rankings-${examId}`).checked = exam.settings.showRankings || false;
+            }
+            
+            if (exam.code) {
+                document.getElementById(`test-code-${examId}`).textContent = `CÓDIGO: ${exam.code}`;
+            }
+        }
+        
+        // Añadir pregunta al examen
+        async function addQuestionToExam(examId) {
+            const questionInput = document.getElementById(`question-${examId}`);
+            const optionsContainer = document.getElementById(`options-container-${examId}`);
+            const questionTimeInput = document.getElementById(`question-time-${examId}`);
+            
+            const question = questionInput.value.trim();
+            const optionRows = optionsContainer.querySelectorAll('.option-row');
+            
+            if (!question) {
+                showMessage('Por favor escribe una pregunta', 'error', true);
+                return;
+            }
+            
+            const options = [];
+            const correctAnswers = [];
+            
+            optionRows.forEach((row, index) => {
+                const input = row.querySelector('.option-input-text');
+                const checkbox = row.querySelector('.correct-checkbox');
+                const option = input.value.trim();
                 
-                const exam = teachers[currentTeacher].exams[examId];
+                if (!option) {
+                    showMessage(`La opción ${index + 1} no puede estar vacía`, 'error', true);
+                    return;
+                }
                 
-                contentDiv.innerHTML = `
-                    <div class="questions-list" id="questions-list-${examId}">
-                        <p style="text-align: center; color: #666; padding: 10px;">No hay preguntas en este examen</p>
+                options.push(option);
+                if (checkbox.checked) {
+                    correctAnswers.push(option);
+                }
+            });
+            
+            if (options.length < 2) {
+                showMessage('Debe haber al menos 2 opciones', 'error', true);
+                return;
+            }
+            
+            if (correctAnswers.length === 0) {
+                showMessage('Debes seleccionar al menos una respuesta correcta', 'error', true);
+                return;
+            }
+            
+            const newQuestion = {
+                id: Date.now(),
+                question: question,
+                options: options,
+                correctAnswers: correctAnswers,
+                time: parseInt(questionTimeInput.value) || 20
+            };
+            
+            if (!teachers[currentTeacher].exams[examId].questions) {
+                teachers[currentTeacher].exams[examId].questions = [];
+            }
+            
+            teachers[currentTeacher].exams[examId].questions.push(newQuestion);
+            await saveTeachersToGist(teachers);
+            displayQuestions(examId);
+            questionInput.value = '';
+            initializeOptions(optionsContainer);
+            showMessage('Pregunta añadida al examen exitosamente', 'success', true);
+        }
+        
+        // Mostrar preguntas
+        function displayQuestions(examId) {
+            const questionsList = document.getElementById(`questions-list-${examId}`);
+            const exam = teachers[currentTeacher].exams[examId];
+            const questions = exam.questions || [];
+            
+            if (questions.length === 0) {
+                questionsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No hay preguntas en este examen</p>';
+                return;
+            }
+            
+            questionsList.innerHTML = '';
+            questions.forEach(q => {
+                const questionDiv = document.createElement('div');
+                questionDiv.className = 'question-item';
+                questionDiv.dataset.id = q.id;
+                
+                const isMultiple = q.correctAnswers.length > 1;
+                const correctAnswersHtml = q.correctAnswers.map(ans => `<span class="correct-answer">${ans}</span>`).join(', ');
+                
+                questionDiv.innerHTML = `
+                    <div class="question-actions">
+                        <button class="btn btn-success question-action-btn edit-btn" title="Editar">✏️</button>
+                        <button class="btn btn-warning question-action-btn delete-btn" title="Eliminar">🗑️</button>
                     </div>
-                    
-                    <div class="form-group">
-                        <label for="question-${examId}">Pregunta:</label>
-                        <textarea id="question-${examId}" placeholder="Escribe tu pregunta"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Opciones y Respuestas Correctas:</label>
-                        <div id="options-container-${examId}" class="options-container"></div>
-                    </div>
-                    <div class="time-settings">
-                        <div class="form-group">
-                            <label for="question-time-${examId}">Tiempo por pregunta (segundos):</label>
-                            <input type="number" id="question-time-${examId}" min="10" max="300" value="20">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <button id="add-option-${examId}" class="btn btn-success">➕ Añadir Opción</button>
-                        <button id="add-question-${examId}" class="btn">✅ Añadir Pregunta</button>
-                    </div>
-                    
-                    <div class="general-settings">
-                        <div class="form-group">
-                            <label for="start-date-${examId}">Fecha/hora de inicio:</label>
-                            <input type="datetime-local" id="start-date-${examId}">
-                        </div>
-                        <div class="form-group">
-                            <label for="end-date-${examId}">Fecha/hora de cierre:</label>
-                            <input type="datetime-local" id="end-date-${examId}">
-                        </div>
-                    </div>
-                    
-                    <div class="toggle-section">
-                        <label>
-                            <input type="checkbox" id="show-rankings-${examId}"> 
-                            Mostrar clasificación a los alumnos
-                        </label>
-                    </div>
-                    
-                    <div class="code-display" id="test-code-${examId}">CÓDIGO: ESPERE...</div>
-                    <button id="generate-test-${examId}" class="btn btn-secondary">🚀 Generar Examen</button>
-                    
-                    <div class="participants-section">
-                        <h3>👥 Participantes Finalizados</h3>
-                        <div class="participants-list" id="participants-list-${examId}">
-                            <p style="text-align: center; color: #666; padding: 10px;">No hay participantes aún</p>
-                        </div>
-                        <div class="csv-section">
-                            <button id="export-csv-${examId}" class="btn btn-csv">📊 Exportar Resultados a CSV</button>
-                        </div>
-                    </div>
-                    
-                    <div class="rankings-section">
-                        <h3>🥇 Clasificación Final</h3>
-                        <div class="participants-list" id="rankings-list-${examId}">
-                            <p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>
-                        </div>
+                    <div class="question-content">
+                        <h4>${q.question}</h4>
+                        <p><strong>Opciones:</strong> ${q.options.join(', ')}</p>
+                        <p><strong>Respuesta(s) correcta(s):</strong> ${correctAnswersHtml}</p>
+                        <p><strong>Tiempo:</strong> ${q.time} segundos | ${isMultiple ? '<span class="multiple-choice">Múltiple</span>' : 'Única'}</p>
                     </div>
                 `;
                 
-                // Inicializar opciones
-                const optionsContainer = document.getElementById(`options-container-${examId}`);
-                initializeOptions(optionsContainer);
+                questionsList.appendChild(questionDiv);
                 
-                // Configurar fechas
-                const startDateInput = document.getElementById(`start-date-${examId}`);
-                const endDateInput = document.getElementById(`end-date-${examId}`);
-                
-                if (exam.settings && exam.settings.startDate) {
-                    startDateInput.value = formatDateTimeLocal(new Date(exam.settings.startDate));
-                } else {
-                    const now = new Date();
-                    const startDate = new Date(now.getTime() + 60000);
-                    startDateInput.value = formatDateTimeLocal(startDate);
-                }
-                
-                if (exam.settings && exam.settings.endDate) {
-                    endDateInput.value = formatDateTimeLocal(new Date(exam.settings.endDate));
-                } else {
-                    const now = new Date();
-                    const endDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-                    endDateInput.value = formatDateTimeLocal(endDate);
-                }
-                
-                // Cargar preguntas
-                displayQuestions(examId);
-                
-                // Configurar eventos
-                document.getElementById(`add-option-${examId}`).onclick = () => {
-                    const optionNumber = optionsContainer.querySelectorAll('.option-row').length + 1;
-                    addOption(optionsContainer, `Opción ${optionNumber}`, false);
-                };
-                
-                document.getElementById(`add-question-${examId}`).onclick = () => addQuestionToExam(examId);
-                document.getElementById(`generate-test-${examId}`).onclick = () => generateTest(examId);
-                document.getElementById(`export-csv-${examId}`).onclick = () => exportCSV(examId);
-                
-                // Cargar configuración
-                if (exam.settings) {
-                    document.getElementById(`question-time-${examId}`).value = exam.settings.questionTime || 20;
-                    document.getElementById(`show-rankings-${examId}`).checked = exam.settings.showRankings || false;
-                }
-                
-                if (exam.code) {
-                    document.getElementById(`test-code-${examId}`).textContent = `CÓDIGO: ${exam.code}`;
-                }
-            }
+                questionDiv.querySelector('.edit-btn').onclick = () => editQuestion(examId, q.id);
+                questionDiv.querySelector('.delete-btn').onclick = () => deleteQuestion(examId, q.id);
+            });
+        }
+        
+        // Editar pregunta
+        async function editQuestion(examId, questionId) {
+            const exam = teachers[currentTeacher].exams[examId];
+            const question = exam.questions.find(q => q.id === questionId);
+            if (!question) return;
             
-            // Añadir pregunta al examen
-            function addQuestionToExam(examId) {
-                const questionInput = document.getElementById(`question-${examId}`);
-                const optionsContainer = document.getElementById(`options-container-${examId}`);
-                const questionTimeInput = document.getElementById(`question-time-${examId}`);
-                
-                const question = questionInput.value.trim();
-                const optionRows = optionsContainer.querySelectorAll('.option-row');
-                
-                if (!question) {
-                    showMessage('Por favor escribe una pregunta', 'error', true);
-                    return;
-                }
-                
-                const options = [];
-                const correctAnswers = [];
-                
-                optionRows.forEach((row, index) => {
-                    const input = row.querySelector('.option-input-text');
-                    const checkbox = row.querySelector('.correct-checkbox');
-                    const option = input.value.trim();
-                    
-                    if (!option) {
-                        showMessage(`La opción ${index + 1} no puede estar vacía`, 'error', true);
-                        return;
-                    }
-                    
-                    options.push(option);
-                    if (checkbox.checked) {
-                        correctAnswers.push(option);
-                    }
-                });
-                
-                if (options.length < 2) {
-                    showMessage('Debe haber al menos 2 opciones', 'error', true);
-                    return;
-                }
-                
-                if (correctAnswers.length === 0) {
-                    showMessage('Debes seleccionar al menos una respuesta correcta', 'error', true);
-                    return;
-                }
-                
-                const newQuestion = {
-                    id: Date.now(),
-                    question: question,
-                    options: options,
-                    correctAnswers: correctAnswers,
-                    time: parseInt(questionTimeInput.value) || 20
-                };
-                
-                if (!teachers[currentTeacher].exams[examId].questions) {
-                    teachers[currentTeacher].exams[examId].questions = [];
-                }
-                
-                teachers[currentTeacher].exams[examId].questions.push(newQuestion);
-                displayQuestions(examId);
-                questionInput.value = '';
-                initializeOptions(optionsContainer);
-                showMessage('Pregunta añadida al examen exitosamente', 'success', true);
-            }
+            const questionInput = document.getElementById(`question-${examId}`);
+            const optionsContainer = document.getElementById(`options-container-${examId}`);
+            const questionTimeInput = document.getElementById(`question-time-${examId}`);
             
-            // Mostrar preguntas
-            function displayQuestions(examId) {
-                const questionsList = document.getElementById(`questions-list-${examId}`);
-                const exam = teachers[currentTeacher].exams[examId];
-                const questions = exam.questions || [];
-                
-                if (questions.length === 0) {
-                    questionsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No hay preguntas en este examen</p>';
-                    return;
-                }
-                
-                questionsList.innerHTML = '';
-                questions.forEach(q => {
-                    const questionDiv = document.createElement('div');
-                    questionDiv.className = 'question-item';
-                    questionDiv.dataset.id = q.id;
-                    
-                    const isMultiple = q.correctAnswers.length > 1;
-                    const correctAnswersHtml = q.correctAnswers.map(ans => `<span class="correct-answer">${ans}</span>`).join(', ');
-                    
-                    questionDiv.innerHTML = `
-                        <div class="question-actions">
-                            <button class="btn btn-success question-action-btn edit-btn" title="Editar">✏️</button>
-                            <button class="btn btn-warning question-action-btn delete-btn" title="Eliminar">🗑️</button>
-                        </div>
-                        <div class="question-content">
-                            <h4>${q.question}</h4>
-                            <p><strong>Opciones:</strong> ${q.options.join(', ')}</p>
-                            <p><strong>Respuesta(s) correcta(s):</strong> ${correctAnswersHtml}</p>
-                            <p><strong>Tiempo:</strong> ${q.time} segundos | ${isMultiple ? '<span class="multiple-choice">Múltiple</span>' : 'Única'}</p>
-                        </div>
-                    `;
-                    
-                    questionsList.appendChild(questionDiv);
-                    
-                    questionDiv.querySelector('.edit-btn').onclick = () => editQuestion(examId, q.id);
-                    questionDiv.querySelector('.delete-btn').onclick = () => deleteQuestion(examId, q.id);
-                });
-            }
+            questionInput.value = question.question;
+            optionsContainer.innerHTML = '';
             
-            // Editar pregunta
-            function editQuestion(examId, questionId) {
-                const exam = teachers[currentTeacher].exams[examId];
-                const question = exam.questions.find(q => q.id === questionId);
-                if (!question) return;
-                
-                const questionInput = document.getElementById(`question-${examId}`);
-                const optionsContainer = document.getElementById(`options-container-${examId}`);
-                const questionTimeInput = document.getElementById(`question-time-${examId}`);
-                
-                questionInput.value = question.question;
-                optionsContainer.innerHTML = '';
-                
-                question.options.forEach(option => {
-                    const isChecked = question.correctAnswers.includes(option);
-                    addOption(optionsContainer, option, isChecked);
-                });
-                
-                // Si hay menos de 4 opciones, completar hasta 4
-                const existingOptions = question.options.length;
-                for (let i = existingOptions; i < 4; i++) {
-                    addOption(optionsContainer, `Opción ${i + 1}`, false);
-                }
-                
-                questionTimeInput.value = question.time || 20;
-                
-                // Eliminar la pregunta original
-                exam.questions = exam.questions.filter(q => q.id !== questionId);
-                displayQuestions(examId);
-            }
-            
-            // Eliminar pregunta
-            function deleteQuestion(examId, questionId) {
-                if (confirm('¿Estás seguro de que quieres eliminar esta pregunta?')) {
-                    const exam = teachers[currentTeacher].exams[examId];
-                    exam.questions = exam.questions.filter(q => q.id !== questionId);
-                    displayQuestions(examId);
-                    showMessage('Pregunta eliminada exitosamente', 'success', true);
-                }
-            }
-            
-            // Crear nuevo examen
-            createExamBtn.addEventListener('click', () => {
-                const name = examName.value.trim();
-                if (!name) {
-                    showMessage('Por favor ingresa un nombre para el examen', 'error', true);
-                    return;
-                }
-                
-                const examId = Date.now().toString();
-                if (!teachers[currentTeacher].exams) {
-                    teachers[currentTeacher].exams = {};
-                }
-                
-                teachers[currentTeacher].exams[examId] = {
-                    id: examId,
-                    name: name,
-                    questions: [],
-                    settings: {
-                        questionTime: 20,
-                        startDate: null,
-                        endDate: null,
-                        showRankings: false
-                    },
-                    code: '',
-                    participants: []
-                };
-                
-                updateExamsList();
-                examName.value = '';
-                showMessage('Examen creado exitosamente', 'success', true);
+            question.options.forEach(option => {
+                const isChecked = question.correctAnswers.includes(option);
+                addOption(optionsContainer, option, isChecked);
             });
             
-            // Editar examen
-            function editExam(examId) {
-                // Expandir el examen si no está expandido
-                if (expandedExam !== examId) {
-                    toggleExamContent(examId);
-                }
+            // Si hay menos de 4 opciones, completar hasta 4
+            const existingOptions = question.options.length;
+            for (let i = existingOptions; i < 4; i++) {
+                addOption(optionsContainer, `Opción ${i + 1}`, false);
             }
             
-            // Eliminar examen
-            function deleteExam(examId) {
-                if (confirm('¿Estás seguro de que quieres eliminar este examen?')) {
-                    delete teachers[currentTeacher].exams[examId];
-                    if (expandedExam === examId) {
-                        expandedExam = null;
+            questionTimeInput.value = question.time || 20;
+            
+            // Eliminar la pregunta original
+            exam.questions = exam.questions.filter(q => q.id !== questionId);
+            await saveTeachersToGist(teachers);
+            displayQuestions(examId);
+        }
+        
+        // Eliminar pregunta
+        async function deleteQuestion(examId, questionId) {
+            if (confirm('¿Estás seguro de que quieres eliminar esta pregunta?')) {
+                const exam = teachers[currentTeacher].exams[examId];
+                exam.questions = exam.questions.filter(q => q.id !== questionId);
+                await saveTeachersToGist(teachers);
+                displayQuestions(examId);
+                showMessage('Pregunta eliminada exitosamente', 'success', true);
+            }
+        }
+        
+        // Crear nuevo examen
+        async function createExam() {
+            const name = examName.value.trim();
+            if (!name) {
+                showMessage('Por favor ingresa un nombre para el examen', 'error', true);
+                return;
+            }
+            
+            const examId = Date.now().toString();
+            if (!teachers[currentTeacher].exams) {
+                teachers[currentTeacher].exams = {};
+            }
+            
+            teachers[currentTeacher].exams[examId] = {
+                id: examId,
+                name: name,
+                questions: [],
+                settings: {
+                    questionTime: 20,
+                    startDate: null,
+                    endDate: null,
+                    showRankings: false
+                },
+                code: '',
+                participants: []
+            };
+            
+            await saveTeachersToGist(teachers);
+            updateExamsList();
+            examName.value = '';
+            showMessage('Examen creado exitosamente', 'success', true);
+        }
+        
+        createExamBtn.addEventListener('click', createExam);
+        
+        // Editar examen
+        function editExam(examId) {
+            if (expandedExam !== examId) {
+                toggleExamContent(examId);
+            }
+        }
+        
+        // Eliminar examen
+        async function deleteExam(examId) {
+            if (confirm('¿Estás seguro de que quieres eliminar este examen?')) {
+                delete teachers[currentTeacher].exams[examId];
+                if (expandedExam === examId) {
+                    expandedExam = null;
+                }
+                await saveTeachersToGist(teachers);
+                updateExamsList();
+                showMessage('Examen eliminado exitosamente', 'success', true);
+            }
+        }
+        
+        // Generar examen
+        async function generateTest(examId) {
+            const exam = teachers[currentTeacher].exams[examId];
+            const questions = exam.questions || [];
+            
+            if (questions.length === 0) {
+                showMessage('No hay preguntas en el examen para generar', 'error', true);
+                return;
+            }
+            
+            // Guardar configuración
+            const startDateInput = document.getElementById(`start-date-${examId}`);
+            const endDateInput = document.getElementById(`end-date-${examId}`);
+            const questionTimeInput = document.getElementById(`question-time-${examId}`);
+            const showRankingsToggle = document.getElementById(`show-rankings-${examId}`);
+            
+            exam.settings = {
+                questionTime: parseInt(questionTimeInput.value) || 20,
+                startDate: startDateInput.value ? new Date(startDateInput.value).getTime() : null,
+                endDate: endDateInput.value ? new Date(endDateInput.value).getTime() : null,
+                showRankings: showRankingsToggle.checked
+            };
+            
+            exam.code = generateRandomCode();
+            exam.participants = [];
+            
+            await saveTeachersToGist(teachers);
+            document.getElementById(`test-code-${examId}`).textContent = `CÓDIGO: ${exam.code}`;
+            updateParticipantsList(examId);
+            updateRankings(examId);
+            
+            showMessage('¡Examen generado exitosamente! Comparte este código con tus alumnos.', 'success', true);
+        }
+        
+        // Generar código aleatorio
+        function generateRandomCode() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let result = '';
+            for (let i = 0; i < 6; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        }
+        
+        // Actualizar lista de participantes
+        function updateParticipantsList(examId) {
+            const exam = teachers[currentTeacher].exams[examId];
+            const participants = exam.participants || [];
+            const participantsList = document.getElementById(`participants-list-${examId}`);
+            
+            if (participants.length === 0) {
+                participantsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No hay participantes aún</p>';
+                return;
+            }
+            
+            participantsList.innerHTML = '';
+            participants.forEach(participant => {
+                const participantDiv = document.createElement('div');
+                participantDiv.className = 'participant-item';
+                const startTime = new Date(participant.startTime).toLocaleString();
+                participantDiv.innerHTML = `
+                    <div class="participant-name">${participant.name}</div>
+                    <div class="participant-time">Finalizó: ${startTime}</div>
+                    <div class="participant-time">Puntuación: ${participant.score}/${exam.questions.length} (${participant.percentage}%)</div>
+                `;
+                participantsList.appendChild(participantDiv);
+            });
+        }
+        
+        // Actualizar clasificación
+        function updateRankings(examId) {
+            const exam = teachers[currentTeacher].exams[examId];
+            const participants = exam.participants || [];
+            const questions = exam.questions || [];
+            const rankingsList = document.getElementById(`rankings-list-${examId}`);
+            
+            if (participants.length === 0 || questions.length === 0) {
+                rankingsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>';
+                return;
+            }
+            
+            const completedParticipants = participants.filter(p => p.completed);
+            const sortedParticipants = completedParticipants.sort((a, b) => b.score - a.score || b.percentage - a.percentage);
+            
+            rankingsList.innerHTML = '';
+            sortedParticipants.forEach((participant, index) => {
+                const rankingDiv = document.createElement('div');
+                rankingDiv.className = 'ranking-item';
+                rankingDiv.innerHTML = `
+                    <div class="ranking-position">${index + 1}</div>
+                    <div class="ranking-name">${participant.name}</div>
+                    <div class="ranking-score">${participant.score}/${questions.length} (${participant.percentage}%)</div>
+                `;
+                rankingsList.appendChild(rankingDiv);
+            });
+        }
+        
+        // Exportar a CSV
+        function exportCSV(examId) {
+            const exam = teachers[currentTeacher].exams[examId];
+            const participants = exam.participants || [];
+            const questions = exam.questions || [];
+            
+            if (participants.length === 0 || questions.length === 0) {
+                showMessage('No hay participantes que hayan finalizado el examen', 'error', true);
+                return;
+            }
+            
+            const completedParticipants = participants.filter(p => p.completed);
+            if (completedParticipants.length === 0) {
+                showMessage('No hay participantes que hayan finalizado el examen', 'error', true);
+                return;
+            }
+            
+            // Crear contenido CSV en formato correcto
+            let csvContent = '';
+            
+            // Encabezados (primera fila)
+            csvContent += 'Nombre,Calificación,Puntuación,';
+            for (let i = 0; i < questions.length; i++) {
+                csvContent += `P${i + 1},`;
+            }
+            csvContent = csvContent.slice(0, -1);
+            csvContent += '\r\n';
+            
+            // Datos de cada participante
+            for (let participant of completedParticipants) {
+                csvContent += `"${participant.name}",`;
+                csvContent += `"${participant.percentage}%",`;
+                csvContent += `"${participant.score}/${questions.length}",`;
+                
+                if (participant.answers && participant.answers.length === questions.length) {
+                    for (let answer of participant.answers) {
+                        csvContent += `"${answer.isCorrect ? 'Correcto' : 'Incorrecto'}",`;
                     }
-                    updateExamsList();
-                    showMessage('Examen eliminado exitosamente', 'success', true);
+                } else {
+                    for (let i = 0; i < questions.length; i++) {
+                        csvContent += '"-",';
+                    }
                 }
-            }
-            
-            // Generar examen
-            function generateTest(examId) {
-                const exam = teachers[currentTeacher].exams[examId];
-                const questions = exam.questions || [];
-                
-                if (questions.length === 0) {
-                    showMessage('No hay preguntas en el examen para generar', 'error', true);
-                    return;
-                }
-                
-                // Guardar configuración
-                const startDateInput = document.getElementById(`start-date-${examId}`);
-                const endDateInput = document.getElementById(`end-date-${examId}`);
-                const questionTimeInput = document.getElementById(`question-time-${examId}`);
-                const showRankingsToggle = document.getElementById(`show-rankings-${examId}`);
-                
-                exam.settings = {
-                    questionTime: parseInt(questionTimeInput.value) || 20,
-                    startDate: startDateInput.value ? new Date(startDateInput.value).getTime() : null,
-                    endDate: endDateInput.value ? new Date(endDateInput.value).getTime() : null,
-                    showRankings: showRankingsToggle.checked
-                };
-                
-                exam.code = generateRandomCode();
-                exam.participants = [];
-                
-                document.getElementById(`test-code-${examId}`).textContent = `CÓDIGO: ${exam.code}`;
-                updateParticipantsList(examId);
-                updateRankings(examId);
-                
-                showMessage('¡Examen generado exitosamente! Comparte este código con tus alumnos.', 'success', true);
-            }
-            
-            // Generar código aleatorio
-            function generateRandomCode() {
-                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                let result = '';
-                for (let i = 0; i < 6; i++) {
-                    result += chars.charAt(Math.floor(Math.random() * chars.length));
-                }
-                return result;
-            }
-            
-            // Actualizar lista de participantes
-            function updateParticipantsList(examId) {
-                const exam = teachers[currentTeacher].exams[examId];
-                const participants = exam.participants || [];
-                const participantsList = document.getElementById(`participants-list-${examId}`);
-                
-                if (participants.length === 0) {
-                    participantsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No hay participantes aún</p>';
-                    return;
-                }
-                
-                participantsList.innerHTML = '';
-                participants.forEach(participant => {
-                    const participantDiv = document.createElement('div');
-                    participantDiv.className = 'participant-item';
-                    const startTime = new Date(participant.startTime).toLocaleString();
-                    participantDiv.innerHTML = `
-                        <div class="participant-name">${participant.name}</div>
-                        <div class="participant-time">Finalizó: ${startTime}</div>
-                        <div class="participant-time">Puntuación: ${participant.score}/${exam.questions.length} (${participant.percentage}%)</div>
-                    `;
-                    participantsList.appendChild(participantDiv);
-                });
-            }
-            
-            // Actualizar clasificación
-            function updateRankings(examId) {
-                const exam = teachers[currentTeacher].exams[examId];
-                const participants = exam.participants || [];
-                const questions = exam.questions || [];
-                const rankingsList = document.getElementById(`rankings-list-${examId}`);
-                
-                if (participants.length === 0 || questions.length === 0) {
-                    rankingsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>';
-                    return;
-                }
-                
-                const completedParticipants = participants.filter(p => p.completed);
-                const sortedParticipants = completedParticipants.sort((a, b) => b.score - a.score || b.percentage - a.percentage);
-                
-                rankingsList.innerHTML = '';
-                sortedParticipants.forEach((participant, index) => {
-                    const rankingDiv = document.createElement('div');
-                    rankingDiv.className = 'ranking-item';
-                    rankingDiv.innerHTML = `
-                        <div class="ranking-position">${index + 1}</div>
-                        <div class="ranking-name">${participant.name}</div>
-                        <div class="ranking-score">${participant.score}/${questions.length} (${participant.percentage}%)</div>
-                    `;
-                    rankingsList.appendChild(rankingDiv);
-                });
-            }
-            
-            // Exportar a CSV - versión CORREGIDA con formato CSV estándar
-            function exportCSV(examId) {
-                const exam = teachers[currentTeacher].exams[examId];
-                const participants = exam.participants || [];
-                const questions = exam.questions || [];
-                
-                if (participants.length === 0 || questions.length === 0) {
-                    showMessage('No hay participantes que hayan finalizado el examen', 'error', true);
-                    return;
-                }
-                
-                const completedParticipants = participants.filter(p => p.completed);
-                if (completedParticipants.length === 0) {
-                    showMessage('No hay participantes que hayan finalizado el examen', 'error', true);
-                    return;
-                }
-                
-                // Crear contenido CSV en formato correcto
-                let csvContent = '';
-                
-                // Encabezados (primera fila)
-                csvContent += 'Nombre,Calificación,Puntuación,';
-                for (let i = 0; i < questions.length; i++) {
-                    csvContent += `P${i + 1},`;
-                }
-                csvContent = csvContent.slice(0, -1); // Eliminar última coma
+                csvContent = csvContent.slice(0, -1);
                 csvContent += '\r\n';
-                
-                // Datos de cada participante (filas subsiguientes)
-                for (let participant of completedParticipants) {
-                    csvContent += `"${participant.name}",`;
-                    csvContent += `"${participant.percentage}%",`;
-                    csvContent += `"${participant.score}/${questions.length}",`;
-                    
-                    // Resultados por pregunta
-                    if (participant.answers && participant.answers.length === questions.length) {
-                        for (let answer of participant.answers) {
-                            csvContent += `"${answer.isCorrect ? 'Correcto' : 'Incorrecto'}",`;
-                        }
-                    } else {
-                        // Rellenar con guiones si no hay datos
-                        for (let i = 0; i < questions.length; i++) {
-                            csvContent += '"-",';
-                        }
-                    }
-                    csvContent = csvContent.slice(0, -1); // Eliminar última coma
-                    csvContent += '\r\n';
-                }
-                
-                // Crear blob con el contenido CSV y BOM para UTF-8
-                const blob = new Blob(['\ufeff', csvContent], { 
-                    type: 'text/csv;charset=utf-8;'
-                });
-                
-                // Crear y descargar archivo
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.setAttribute('href', url);
-                link.setAttribute('download', `resultados_examen_${exam.name.replace(/\s+/g, '_')}_${exam.code}.csv`);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-                
-                showMessage('Archivo CSV exportado exitosamente', 'success', true);
             }
             
-            // Acceso del alumno al examen
-            accessTestBtn.addEventListener('click', () => {
-                const code = accessCodeInput.value.trim().toUpperCase();
-                studentName = studentNameInput.value.trim();
-                
-                if (!studentName) {
-                    showMessage('Por favor ingresa tu nombre', 'error');
-                    return;
-                }
-                
-                if (!code) {
-                    showMessage('Por favor ingresa un código', 'error');
-                    return;
-                }
-                
-                // Buscar examen por código
-                let foundExam = null;
-                let foundTeacher = null;
-                let foundExamId = null;
-                
-                for (const teacherEmail in teachers) {
-                    const teacher = teachers[teacherEmail];
+            // Crear y descargar archivo
+            const blob = new Blob(['\ufeff', csvContent], { 
+                type: 'text/csv;charset=utf-8;'
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `resultados_examen_${exam.name.replace(/\s+/g, '_')}_${exam.code}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            showMessage('Archivo CSV exportado exitosamente', 'success', true);
+        }
+        
+        // Acceso del alumno al examen
+        accessTestBtn.addEventListener('click', async () => {
+            const code = accessCodeInput.value.trim().toUpperCase();
+            studentName = studentNameInput.value.trim();
+            
+            if (!studentName) {
+                showMessage('Por favor ingresa tu nombre', 'error');
+                return;
+            }
+            
+            if (!code) {
+                showMessage('Por favor ingresa un código', 'error');
+                return;
+            }
+            
+            // Buscar examen por código en TODOS los docentes
+            let foundExam = null;
+            let foundTeacherEmail = null;
+            let foundExamId = null;
+            
+            // Recargar datos para asegurar que están actualizados
+            teachers = await loadTeachersFromGist();
+            
+            for (const teacherEmail in teachers) {
+                const teacher = teachers[teacherEmail];
+                if (teacher.exams) {
                     for (const examId in teacher.exams) {
                         const exam = teacher.exams[examId];
                         if (exam.code === code) {
                             foundExam = exam;
-                            foundTeacher = teacherEmail;
+                            foundTeacherEmail = teacherEmail;
                             foundExamId = examId;
                             break;
                         }
                     }
-                    if (foundExam) break;
                 }
-                
-                if (!foundExam) {
-                    showMessage('Código incorrecto. Verifica e intenta nuevamente.', 'error');
-                    return;
-                }
-                
-                // Verificar fechas
-                const now = new Date().getTime();
-                if (foundExam.settings.startDate && now < foundExam.settings.startDate) {
-                    showMessage('El examen aún no ha comenzado', 'error');
-                    return;
-                }
-                
-                if (foundExam.settings.endDate && now > foundExam.settings.endDate) {
-                    showMessage('El examen ya ha finalizado', 'error');
-                    return;
-                }
-                
-                if (foundExam.questions.length === 0) {
-                    showMessage('Este examen no tiene preguntas', 'error');
-                    return;
-                }
-                
-                // Inicializar para el examen
-                currentQuestionIndex = 0;
-                studentAnswers = Array(foundExam.questions.length).fill(null);
-                questionsBank[foundExamId] = foundExam.questions;
-                testSettings = foundExam.settings;
-                currentExam = foundExamId;
-                
-                showQuestion(currentQuestionIndex);
-                testInterface.classList.remove('hidden');
-                answersSection.classList.remove('active');
-                messageArea.innerHTML = '';
-            });
-            
-            // Mostrar pregunta
-            function showQuestion(index) {
-                if (!currentExam || !questionsBank[currentExam]) {
-                    showMessage('Error al cargar el examen', 'error');
-                    return;
-                }
-                
-                const questions = questionsBank[currentExam];
-                if (index >= questions.length) {
-                    processTestResults();
-                    return;
-                }
-                
-                const question = questions[index];
-                const totalQuestions = questions.length;
-                
-                questionNumber.textContent = `PREGUNTA ${index + 1}`;
-                currentQuestionText.textContent = question.question;
-                progressIndicator.textContent = `Pregunta ${index + 1} de ${totalQuestions}`;
-                
-                const isMultiple = question.correctAnswers.length > 1;
-                if (isMultiple) {
-                    typeHint.innerHTML = '<div class="multiple-hint">💡 Puedes seleccionar múltiples respuestas</div>';
-                } else {
-                    typeHint.innerHTML = '<div class="single-hint">💡 Selecciona solo una respuesta</div>';
-                }
-                
-                studentOptionsContainer.innerHTML = '';
-                question.options.forEach((option, optionIndex) => {
-                    const optionCard = document.createElement('div');
-                    optionCard.className = 'option-card';
-                    optionCard.setAttribute('data-option', option);
-                    
-                    const inputId = `opt_${index}_${optionIndex}`;
-                    const inputType = isMultiple ? 'checkbox' : 'radio';
-                    const inputName = isMultiple ? '' : `question_${index}`;
-                    
-                    optionCard.innerHTML = `
-                        <input type="${inputType}" 
-                               id="${inputId}" 
-                               name="${inputName}" 
-                               class="option-input" 
-                               data-option="${option}">
-                        <label for="${inputId}" class="option-label">${option}</label>
-                    `;
-                    
-                    optionCard.addEventListener('click', (e) => {
-                        if (e.target !== optionCard.querySelector('.option-input')) {
-                            const checkbox = optionCard.querySelector('.option-input');
-                            if (isMultiple) {
-                                checkbox.checked = !checkbox.checked;
-                            } else {
-                                const radioButtons = document.querySelectorAll(`input[name="question_${index}"]`);
-                                radioButtons.forEach(rb => rb.checked = false);
-                                checkbox.checked = true;
-                            }
-                            updateCardSelection(optionCard, checkbox.checked);
-                        }
-                    });
-                    
-                    const input = optionCard.querySelector('.option-input');
-                    input.addEventListener('change', () => {
-                        updateCardSelection(optionCard, input.checked);
-                    });
-                    
-                    studentOptionsContainer.appendChild(optionCard);
-                });
-                
-                startQuestionTimer(question.time || testSettings.questionTime);
+                if (foundExam) break;
             }
             
-            // Procesar resultados
-            function processTestResults() {
-                if (!currentExam || !questionsBank[currentExam]) {
-                    showMessage('Error al procesar resultados', 'error');
-                    return;
-                }
+            if (!foundExam) {
+                showMessage('Código incorrecto. Verifica e intenta nuevamente.', 'error');
+                return;
+            }
+            
+            // Verificar fechas
+            const now = new Date().getTime();
+            if (foundExam.settings.startDate && now < foundExam.settings.startDate) {
+                showMessage('El examen aún no ha comenzado', 'error');
+                return;
+            }
+            
+            if (foundExam.settings.endDate && now > foundExam.settings.endDate) {
+                showMessage('El examen ya ha finalizado', 'error');
+                return;
+            }
+            
+            if (foundExam.questions.length === 0) {
+                showMessage('Este examen no tiene preguntas', 'error');
+                return;
+            }
+            
+            // Inicializar para el examen
+            currentQuestionIndex = 0;
+            studentAnswers = Array(foundExam.questions.length).fill(null);
+            questionsBank[foundExamId] = foundExam.questions;
+            testSettings = foundExam.settings;
+            currentExam = foundExamId;
+            
+            showQuestion(currentQuestionIndex);
+            testInterface.classList.remove('hidden');
+            answersSection.classList.remove('active');
+            messageArea.innerHTML = '';
+        });
+        
+        // Mostrar pregunta
+        function showQuestion(index) {
+            if (!currentExam || !questionsBank[currentExam]) {
+                showMessage('Error al cargar el examen', 'error');
+                return;
+            }
+            
+            const questions = questionsBank[currentExam];
+            if (index >= questions.length) {
+                processTestResults();
+                return;
+            }
+            
+            const question = questions[index];
+            const totalQuestions = questions.length;
+            
+            questionNumber.textContent = `PREGUNTA ${index + 1}`;
+            currentQuestionText.textContent = question.question;
+            progressIndicator.textContent = `Pregunta ${index + 1} de ${totalQuestions}`;
+            
+            const isMultiple = question.correctAnswers.length > 1;
+            if (isMultiple) {
+                typeHint.innerHTML = '<div class="multiple-hint">💡 Puedes seleccionar múltiples respuestas</div>';
+            } else {
+                typeHint.innerHTML = '<div class="single-hint">💡 Selecciona solo una respuesta</div>';
+            }
+            
+            studentOptionsContainer.innerHTML = '';
+            question.options.forEach((option, optionIndex) => {
+                const optionCard = document.createElement('div');
+                optionCard.className = 'option-card';
+                optionCard.setAttribute('data-option', option);
                 
-                const questions = questionsBank[currentExam];
-                let correctCount = 0;
-                const detailedAnswers = [];
+                const inputId = `opt_${index}_${optionIndex}`;
+                const inputType = isMultiple ? 'checkbox' : 'radio';
+                const inputName = isMultiple ? '' : `question_${index}`;
                 
-                // Procesar respuestas
-                for (let i = 0; i < questions.length; i++) {
-                    const answer = studentAnswers[i];
-                    const isCorrect = answer && answer.isCorrect;
-                    if (isCorrect) correctCount++;
-                    
-                    detailedAnswers.push({
-                        question: questions[i].question,
-                        selected: answer ? (answer.selected || []) : [],
-                        correct: questions[i].correctAnswers,
-                        isCorrect: isCorrect
-                    });
-                }
+                optionCard.innerHTML = `
+                    <input type="${inputType}" 
+                           id="${inputId}" 
+                           name="${inputName}" 
+                           class="option-input" 
+                           data-option="${option}">
+                    <label for="${inputId}" class="option-label">${option}</label>
+                `;
                 
-                const percentage = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
-                const score = correctCount;
-                
-                // Registrar participante
-                const participant = {
-                    name: studentName,
-                    startTime: new Date().getTime(),
-                    answers: detailedAnswers,
-                    score: score,
-                    percentage: percentage,
-                    completed: true
-                };
-                
-                // Guardar en el examen correspondiente
-                for (const teacherEmail in teachers) {
-                    const teacher = teachers[teacherEmail];
-                    if (teacher.exams[currentExam]) {
-                        if (!teacher.exams[currentExam].participants) {
-                            teacher.exams[currentExam].participants = [];
+                optionCard.addEventListener('click', (e) => {
+                    if (e.target !== optionCard.querySelector('.option-input')) {
+                        const checkbox = optionCard.querySelector('.option-input');
+                        if (isMultiple) {
+                            checkbox.checked = !checkbox.checked;
+                        } else {
+                            const radioButtons = document.querySelectorAll(`input[name="question_${index}"]`);
+                            radioButtons.forEach(rb => rb.checked = false);
+                            checkbox.checked = true;
                         }
-                        teacher.exams[currentExam].participants.push(participant);
-                        break;
+                        updateCardSelection(optionCard, checkbox.checked);
                     }
+                });
+                
+                const input = optionCard.querySelector('.option-input');
+                input.addEventListener('change', () => {
+                    updateCardSelection(optionCard, input.checked);
+                });
+                
+                studentOptionsContainer.appendChild(optionCard);
+            });
+            
+            startQuestionTimer(question.time || testSettings.questionTime);
+        }
+        
+        // Procesar resultados
+        async function processTestResults() {
+            if (!currentExam || !questionsBank[currentExam]) {
+                showMessage('Error al procesar resultados', 'error');
+                return;
+            }
+            
+            const questions = questionsBank[currentExam];
+            let correctCount = 0;
+            const detailedAnswers = [];
+            
+            for (let i = 0; i < questions.length; i++) {
+                const answer = studentAnswers[i];
+                const isCorrect = answer && answer.isCorrect;
+                if (isCorrect) correctCount++;
+                
+                detailedAnswers.push({
+                    question: questions[i].question,
+                    selected: answer ? (answer.selected || []) : [],
+                    correct: questions[i].correctAnswers,
+                    isCorrect: isCorrect
+                });
+            }
+            
+            const percentage = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
+            const score = correctCount;
+            
+            // Registrar participante
+            const participant = {
+                name: studentName,
+                startTime: new Date().getTime(),
+                answers: detailedAnswers,
+                score: score,
+                percentage: percentage,
+                completed: true
+            };
+            
+            // Guardar en el examen correspondiente
+            let foundTeacher = null;
+            for (const teacherEmail in teachers) {
+                if (teachers[teacherEmail].exams && teachers[teacherEmail].exams[currentExam]) {
+                    foundTeacher = teacherEmail;
+                    break;
                 }
+            }
+            
+            if (foundTeacher) {
+                if (!teachers[foundTeacher].exams[currentExam].participants) {
+                    teachers[foundTeacher].exams[currentExam].participants = [];
+                }
+                teachers[foundTeacher].exams[currentExam].participants.push(participant);
+                await saveTeachersToGist(teachers);
                 
                 // Actualizar vistas del docente si está abierto
-                if (currentTeacher && expandedExam === currentExam) {
+                if (currentTeacher === foundTeacher && expandedExam === currentExam) {
                     updateParticipantsList(currentExam);
                     updateRankings(currentExam);
                 }
-                
-                // Mostrar resultados al alumno
-                testInterface.classList.add('hidden');
-                displayStudentResults(detailedAnswers, score, percentage, questions.length);
             }
             
             // Mostrar resultados al alumno
-            function displayStudentResults(answers, score, percentage, totalQuestions) {
-                answersList.innerHTML = '';
+            testInterface.classList.add('hidden');
+            displayStudentResults(detailedAnswers, score, percentage, questions.length);
+        }
+        
+        // Mostrar resultados al alumno
+        function displayStudentResults(answers, score, percentage, totalQuestions) {
+            answersList.innerHTML = '';
+            
+            answers.forEach((answer, index) => {
+                const answerDiv = document.createElement('div');
+                answerDiv.className = 'answer-item';
                 
-                answers.forEach((answer, index) => {
-                    const answerDiv = document.createElement('div');
-                    answerDiv.className = 'answer-item';
-                    
-                    const selectedHtml = answer.selected.length > 0 ? 
-                        answer.selected.map(opt => `<strong>${opt}</strong>`).join(', ') : 
-                        '<em>Sin respuesta</em>';
-                    const correctHtml = answer.correct.map(opt => `<span style="color: #38a169; font-weight: bold;">${opt}</span>`).join(', ');
-                    
-                    const resultClass = answer.isCorrect ? 'correct' : 'incorrect';
-                    const resultText = answer.isCorrect ? '✅ Correcto' : '❌ Incorrecto';
-                    
-                    answerDiv.innerHTML = `
-                        <div class="answer-header">
-                            <div class="answer-question-number">PREGUNTA ${index + 1}</div>
-                            <div class="answer-result ${resultClass}">${resultText}</div>
-                        </div>
-                        <div class="answer-content">
-                            <p><strong>Pregunta:</strong> ${answer.question}</p>
-                            <p><strong>Tu respuesta:</strong> ${selectedHtml}</p>
-                            <p><strong>Respuesta correcta:</strong> ${correctHtml}</p>
-                        </div>
-                    `;
-                    answersList.appendChild(answerDiv);
-                });
+                const selectedHtml = answer.selected.length > 0 ? 
+                    answer.selected.map(opt => `<strong>${opt}</strong>`).join(', ') : 
+                    '<em>Sin respuesta</em>';
+                const correctHtml = answer.correct.map(opt => `<span style="color: #38a169; font-weight: bold;">${opt}</span>`).join(', ');
                 
-                testResult.innerHTML = `
-                    <h4>📊 Resultado Final</h4>
-                    <div class="test-percentage">${percentage}%</div>
-                    <p>Preguntas correctas: <strong>${score}</strong> de <strong>${totalQuestions}</strong></p>
+                const resultClass = answer.isCorrect ? 'correct' : 'incorrect';
+                const resultText = answer.isCorrect ? '✅ Correcto' : '❌ Incorrecto';
+                
+                answerDiv.innerHTML = `
+                    <div class="answer-header">
+                        <div class="answer-question-number">PREGUNTA ${index + 1}</div>
+                        <div class="answer-result ${resultClass}">${resultText}</div>
+                    </div>
+                    <div class="answer-content">
+                        <p><strong>Pregunta:</strong> ${answer.question}</p>
+                        <p><strong>Tu respuesta:</strong> ${selectedHtml}</p>
+                        <p><strong>Respuesta correcta:</strong> ${correctHtml}</p>
+                    </div>
                 `;
-                
-                answersSection.classList.add('active');
-                
-                // Mostrar clasificación si está activada
-                if (testSettings.showRankings) {
-                    studentRankingsSection.classList.remove('hidden');
-                    updateStudentRankings(totalQuestions);
-                }
-            }
-            
-            // Actualizar clasificación para el alumno
-            function updateStudentRankings(totalQuestions) {
-                if (!currentExam) {
-                    studentRankingsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>';
-                    return;
-                }
-                
-                // Buscar el examen
-                let exam = null;
-                for (const teacherEmail in teachers) {
-                    if (teachers[teacherEmail].exams[currentExam]) {
-                        exam = teachers[teacherEmail].exams[currentExam];
-                        break;
-                    }
-                }
-                
-                if (!exam || !exam.participants) {
-                    studentRankingsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>';
-                    return;
-                }
-                
-                const completedParticipants = exam.participants.filter(p => p.completed);
-                const sortedParticipants = completedParticipants.sort((a, b) => b.score - a.score || b.percentage - a.percentage);
-                
-                studentRankingsList.innerHTML = '';
-                sortedParticipants.forEach((participant, index) => {
-                    const rankingDiv = document.createElement('div');
-                    rankingDiv.className = 'ranking-item';
-                    rankingDiv.innerHTML = `
-                        <div class="ranking-position">${index + 1}</div>
-                        <div class="ranking-name">${participant.name}</div>
-                        <div class="ranking-score">${participant.score}/${totalQuestions} (${participant.percentage}%)</div>
-                    `;
-                    studentRankingsList.appendChild(rankingDiv);
-                });
-            }
-            
-            // Temporizador
-            function startQuestionTimer(seconds) {
-                if (questionTimer) {
-                    clearInterval(questionTimer);
-                }
-                
-                let remaining = seconds;
-                updateTimerDisplay(remaining);
-                
-                questionTimer = setInterval(() => {
-                    remaining--;
-                    updateTimerDisplay(remaining);
-                    
-                    if (remaining <= 0) {
-                        clearInterval(questionTimer);
-                        autoSubmitQuestion();
-                    }
-                    
-                    if (remaining <= 5) {
-                        timerDisplay.classList.add('timer-warning');
-                    }
-                }, 1000);
-            }
-            
-            function updateTimerDisplay(seconds) {
-                const mins = Math.floor(seconds / 60);
-                const secs = seconds % 60;
-                timerDisplay.textContent = `Tiempo restante: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-            }
-            
-            function autoSubmitQuestion() {
-                if (!currentExam || !questionsBank[currentExam] || currentQuestionIndex >= questionsBank[currentExam].length) {
-                    return;
-                }
-                
-                const question = questionsBank[currentExam][currentQuestionIndex];
-                const isMultiple = question.correctAnswers.length > 1;
-                
-                const selectedOptions = [];
-                const optionCards = studentOptionsContainer.querySelectorAll('.option-card');
-                
-                optionCards.forEach(card => {
-                    const input = card.querySelector('.option-input');
-                    if (input.checked) {
-                        selectedOptions.push(input.getAttribute('data-option'));
-                    }
-                });
-                
-                const isCorrect = selectedOptions.length > 0 ? compareArrays(selectedOptions, question.correctAnswers) : false;
-                
-                studentAnswers[currentQuestionIndex] = {
-                    question: question.question,
-                    selected: selectedOptions,
-                    correct: question.correctAnswers,
-                    isCorrect: isCorrect
-                };
-                
-                currentQuestionIndex++;
-                showQuestion(currentQuestionIndex);
-            }
-            
-            function updateCardSelection(card, isSelected) {
-                if (isSelected) {
-                    card.classList.add('selected');
-                } else {
-                    card.classList.remove('selected');
-                }
-            }
-            
-            submitButton.addEventListener('click', () => {
-                if (!currentExam || !questionsBank[currentExam] || currentQuestionIndex >= questionsBank[currentExam].length) {
-                    return;
-                }
-                
-                const question = questionsBank[currentExam][currentQuestionIndex];
-                const isMultiple = question.correctAnswers.length > 1;
-                
-                const selectedOptions = [];
-                const optionCards = studentOptionsContainer.querySelectorAll('.option-card');
-                
-                optionCards.forEach(card => {
-                    const input = card.querySelector('.option-input');
-                    if (input.checked) {
-                        selectedOptions.push(input.getAttribute('data-option'));
-                    }
-                });
-                
-                if (selectedOptions.length === 0) {
-                    showMessage('Por favor selecciona al menos una respuesta', 'error');
-                    return;
-                }
-                
-                const isCorrect = compareArrays(selectedOptions, question.correctAnswers);
-                
-                studentAnswers[currentQuestionIndex] = {
-                    question: question.question,
-                    selected: selectedOptions,
-                    correct: question.correctAnswers,
-                    isCorrect: isCorrect
-                };
-                
-                if (questionTimer) {
-                    clearInterval(questionTimer);
-                    questionTimer = null;
-                }
-                
-                currentQuestionIndex++;
-                showQuestion(currentQuestionIndex);
+                answersList.appendChild(answerDiv);
             });
             
-            function compareArrays(arr1, arr2) {
-                if (arr1.length !== arr2.length) return false;
-                const sorted1 = [...arr1].sort();
-                const sorted2 = [...arr2].sort();
-                return sorted1.every((value, index) => value === sorted2[index]);
+            testResult.innerHTML = `
+                <h4>📊 Resultado Final</h4>
+                <div class="test-percentage">${percentage}%</div>
+                <p>Preguntas correctas: <strong>${score}</strong> de <strong>${totalQuestions}</strong></p>
+            `;
+            
+            answersSection.classList.add('active');
+            
+            // Mostrar clasificación si está activada
+            if (testSettings.showRankings) {
+                studentRankingsSection.classList.remove('hidden');
+                updateStudentRankings(totalQuestions);
+            }
+        }
+        
+        // Actualizar clasificación para el alumno
+        function updateStudentRankings(totalQuestions) {
+            if (!currentExam) {
+                studentRankingsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>';
+                return;
             }
             
-            function formatDateTimeLocal(date) {
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const hours = String(date.getHours()).padStart(2, '0');
-                const minutes = String(date.getMinutes()).padStart(2, '0');
-                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            // Buscar el examen
+            let exam = null;
+            let foundTeacher = null;
+            for (const teacherEmail in teachers) {
+                if (teachers[teacherEmail].exams && teachers[teacherEmail].exams[currentExam]) {
+                    exam = teachers[teacherEmail].exams[currentExam];
+                    foundTeacher = teacherEmail;
+                    break;
+                }
             }
             
-            // Inicializar con datos de ejemplo
-            // Los datos se mantienen en memoria, sin localStorage
+            if (!exam || !exam.participants) {
+                studentRankingsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">Sin clasificación aún</p>';
+                return;
+            }
+            
+            const completedParticipants = exam.participants.filter(p => p.completed);
+            const sortedParticipants = completedParticipants.sort((a, b) => b.score - a.score || b.percentage - a.percentage);
+            
+            studentRankingsList.innerHTML = '';
+            sortedParticipants.forEach((participant, index) => {
+                const rankingDiv = document.createElement('div');
+                rankingDiv.className = 'ranking-item';
+                rankingDiv.innerHTML = `
+                    <div class="ranking-position">${index + 1}</div>
+                    <div class="ranking-name">${participant.name}</div>
+                    <div class="ranking-score">${participant.score}/${totalQuestions} (${participant.percentage}%)</div>
+                `;
+                studentRankingsList.appendChild(rankingDiv);
+            });
+        }
+        
+        // Temporizador
+        function startQuestionTimer(seconds) {
+            if (questionTimer) {
+                clearInterval(questionTimer);
+            }
+            
+            let remaining = seconds;
+            updateTimerDisplay(remaining);
+            
+            questionTimer = setInterval(() => {
+                remaining--;
+                updateTimerDisplay(remaining);
+                
+                if (remaining <= 0) {
+                    clearInterval(questionTimer);
+                    autoSubmitQuestion();
+                }
+                
+                if (remaining <= 5) {
+                    timerDisplay.classList.add('timer-warning');
+                }
+            }, 1000);
+        }
+        
+        function updateTimerDisplay(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            timerDisplay.textContent = `Tiempo restante: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function autoSubmitQuestion() {
+            if (!currentExam || !questionsBank[currentExam] || currentQuestionIndex >= questionsBank[currentExam].length) {
+                return;
+            }
+            
+            const question = questionsBank[currentExam][currentQuestionIndex];
+            const isMultiple = question.correctAnswers.length > 1;
+            
+            const selectedOptions = [];
+            const optionCards = studentOptionsContainer.querySelectorAll('.option-card');
+            
+            optionCards.forEach(card => {
+                const input = card.querySelector('.option-input');
+                if (input.checked) {
+                    selectedOptions.push(input.getAttribute('data-option'));
+                }
+            });
+            
+            const isCorrect = selectedOptions.length > 0 ? compareArrays(selectedOptions, question.correctAnswers) : false;
+            
+            studentAnswers[currentQuestionIndex] = {
+                question: question.question,
+                selected: selectedOptions,
+                correct: question.correctAnswers,
+                isCorrect: isCorrect
+            };
+            
+            currentQuestionIndex++;
+            showQuestion(currentQuestionIndex);
+        }
+        
+        function updateCardSelection(card, isSelected) {
+            if (isSelected) {
+                card.classList.add('selected');
+            } else {
+                card.classList.remove('selected');
+            }
+        }
+        
+        submitButton.addEventListener('click', () => {
+            if (!currentExam || !questionsBank[currentExam] || currentQuestionIndex >= questionsBank[currentExam].length) {
+                return;
+            }
+            
+            const question = questionsBank[currentExam][currentQuestionIndex];
+            const isMultiple = question.correctAnswers.length > 1;
+            
+            const selectedOptions = [];
+            const optionCards = studentOptionsContainer.querySelectorAll('.option-card');
+            
+            optionCards.forEach(card => {
+                const input = card.querySelector('.option-input');
+                if (input.checked) {
+                    selectedOptions.push(input.getAttribute('data-option'));
+                }
+            });
+            
+            if (selectedOptions.length === 0) {
+                showMessage('Por favor selecciona al menos una respuesta', 'error');
+                return;
+            }
+            
+            const isCorrect = compareArrays(selectedOptions, question.correctAnswers);
+            
+            studentAnswers[currentQuestionIndex] = {
+                question: question.question,
+                selected: selectedOptions,
+                correct: question.correctAnswers,
+                isCorrect: isCorrect
+            };
+            
+            if (questionTimer) {
+                clearInterval(questionTimer);
+                questionTimer = null;
+            }
+            
+            currentQuestionIndex++;
+            showQuestion(currentQuestionIndex);
+        });
+        
+        function compareArrays(arr1, arr2) {
+            if (arr1.length !== arr2.length) return false;
+            const sorted1 = [...arr1].sort();
+            const sorted2 = [...arr2].sort();
+            return sorted1.every((value, index) => value === sorted2[index]);
+        }
+        
+        function formatDateTimeLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+        
+        // Inicializar la aplicación
+        (async function init() {
+            try {
+                // Cargar datos desde Gist
+                teachers = await loadTeachersFromGist();
+                
+                // Verificar si hay datos iniciales
+                if (Object.keys(teachers).length === 0) {
+                    // Crear datos de ejemplo si no existen
+                    teachers['profesor@ejemplo.com'] = {
+                        email: 'profesor@ejemplo.com',
+                        password: '123456',
+                        exams: {}
+                    };
+                    await saveTeachersToGist(teachers);
+                }
+                
+                // Eliminar el loading
+                examsList.innerHTML = '<p style="text-align: center; color: #666; padding: 10px;">No tienes exámenes creados</p>';
+                
+            } catch (error) {
+                console.error('Error al inicializar:', error);
+                examsList.innerHTML = '<p style="text-align: center; color: #e53e3e; padding: 10px;">Error al cargar los datos</p>';
+                showMessage('No se pudieron cargar los datos. Verifica tu conexión.', 'error');
+            }
+        })();
         </script>
     </body>
 </html>
